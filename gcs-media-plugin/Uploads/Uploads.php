@@ -36,7 +36,7 @@ class Uploads
 {
     const USE_HTTPS_OPTION = 'gcs_use_https_for_media';
     const BUCKET_OPTION = 'gcs_bucket';
-    const CDN_ENDPOINT = 'gcs_bucket';
+    const CDN_ENDPOINT = 'gcs_cdn_endpoint';
     const USE_CDN_OPTION = 'gcs_user_cdn_options';
 
     /**
@@ -46,8 +46,8 @@ class Uploads
     {
         add_filter('upload_dir', __CLASS__ . '::filter_upload_dir');
         add_filter('wp_delete_file', __CLASS__ . '::filter_delete_file');
-        add_filter('wp_get_attachment_image_src', __CLASS__ . '::multiple_cdn_img_src_rewriting', 100, 4 );
-        // add_filter('wp_calculate_image_srcset', __CLASS__ . '::multiple_cdn_img_srcset_rewriting', 1, 5 );        
+        add_filter('wp_get_attachment_image_src', __CLASS__ . '::img_src_rewriting', null, 4);
+        add_filter('wp_calculate_image_srcset', __CLASS__ . '::img_srcset_rewriting', null, 5);        
     }
 
     /**
@@ -84,27 +84,37 @@ class Uploads
     * https://wpsuperstar.com/2017/01/23/serving-images-from-multiple-cdns-in-wordpress/
     */    
     public static function img_src_rewriting( $image, $attachment_id, $size, $icon ) {
-        // Old CDN URL
-        $endpoint = get_option(self::CDN_ENDPOINT, ''); // '//images.oldcdnurl.com/path/to/uploads';
-
-        if ($endpoint === '') {
+        
+        $endpoint = get_option(self::CDN_ENDPOINT, ''); 
+        $bucket = get_option(self::BUCKET_OPTION, '');
+        if ($endpoint === '' || $bucket === '' ) {
             // Do nothing without the bucket name.
             return $image;
         }
 
-        // Set the image src url to whatever the GUID field was
-        $image[0] = $endpoint;    
-     
-        // Return the array
-        return $image;
+        if (is_array($image) && !empty($image[0])) {
+            $use_https = get_option(self::USE_HTTPS_OPTION, false);
+            $baseurl = sprintf(
+                '%s://storage.googleapis.com/%s/',
+                $use_https ? 'https' : 'http',
+                $bucket);
+
+            $image[0] = str_replace($baseurl, $endpoint, $image[0]);
+        }
+        return $image;        
     }
 
-    public static function multiple_cdn_img_srcset_rewriting( $sources, $size_array, $image_src, $image_meta, $attachment_id ) {
-        $upload_dir = wp_upload_dir();
-        $cdn_url = '//images.oldcdnurl.com/path/to/uploads';
+    public static function img_srcset_rewriting( $sources, $size_array, $image_src, $image_meta, $attachment_id ) {
+        $upload_dir = wp_upload_dir();                
+        $endpoint = get_option(self::CDN_ENDPOINT, '');
+        if ($endpoint === '') {
+            // Do nothing without the bucket name.
+            return $sources;
+        }
+
         foreach( $sources as $key => $other ) {
-            if( strpos( $image_src, $cdn_url ) !== false ) {
-                $sources[$key]['url'] = str_replace( $upload_dir['baseurl'], $cdn_url, $sources[$key]['url'] );
+            if( strpos( $image_src, $endpoint ) !== false ) {
+                $sources[$key]['url'] = str_replace( $upload_dir['baseurl'], $endpoint, $sources[$key]['url'] );
             }
         }
         // Return the new sources
@@ -192,29 +202,7 @@ class Uploads
         echo '<p class="description">'
             . __('Cdn endpoint', 'gcp')
             . '</p>';
-    }
-
-    /**
-     * Display the input form for use_https_for_media.
-     */
-    public static function use_https_form()
-    {
-        $enabled = get_option(self::USE_CDN_OPTION, false);
-        echo sprintf(
-            '<input id="%s", name="%s" type="checkbox" %s>',
-            self::USE_CDN_OPTION,
-            self::USE_CDN_OPTION,
-            checked($enabled, true, false)
-        );
-        echo '<p class="description">'
-            . __(
-                'Check to serve uploaded media files over HTTPS. '
-                . '<strong>Note:</strong>This setting only affects new uploads,'
-                . ' it will not change the HTTP scheme for files previously '
-                . 'uploaded',
-                'gcp')
-            . '</p>';
-    }
+    }  
 
     /**
      * Validate the bucket name in the form.
@@ -241,6 +229,14 @@ class Uploads
     }
 
     /**
+    * Validate the value for the use_https form.
+    */
+    public static function validate_cdn_endpoint($input)
+    {
+        return $input;
+    }
+
+    /**
      * Register our options.
      */
     public static function register_settings()
@@ -255,6 +251,11 @@ class Uploads
             'gcs_settings',
             self::USE_HTTPS_OPTION,
             __CLASS__ . '::validate_use_https'
+        );
+         register_setting(
+            'gcs_settings',
+            self::CDN_ENDPOINT,
+            __CLASS__ . '::validate_cdn_endpoint'
         );
         add_settings_section(
             'gcs_media',
