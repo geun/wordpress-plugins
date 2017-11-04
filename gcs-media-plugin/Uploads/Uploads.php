@@ -104,17 +104,23 @@ class Uploads
         return $image;        
     }
 
-    public static function img_srcset_rewriting( $sources, $size_array, $image_src, $image_meta, $attachment_id ) {
-        $upload_dir = wp_upload_dir();                
+    public static function img_srcset_rewriting( $sources, $size_array, $image_src, $image_meta, $attachment_id ) {        
+
+        $bucket = get_option(self::BUCKET_OPTION, '');      
         $endpoint = get_option(self::CDN_ENDPOINT, '');
-        if ($endpoint === '') {
+        if ($endpoint === '' || $bucket === '') {
             // Do nothing without the bucket name.
             return $sources;
         }
 
+        $use_https = get_option(self::USE_HTTPS_OPTION, false);
+        $baseurl = sprintf(
+                '%s://storage.googleapis.com/%s',
+                $use_https ? 'https' : 'http',
+                $bucket);
         foreach( $sources as $key => $other ) {
             if( strpos( $image_src, $endpoint ) !== false ) {
-                $sources[$key]['url'] = str_replace( $upload_dir['baseurl'], $endpoint, $sources[$key]['url'] );
+                $sources[$key]['url'] = str_replace( $baseurl, $endpoint, $sources[$key]['url'] );
             }
         }
         // Return the new sources
