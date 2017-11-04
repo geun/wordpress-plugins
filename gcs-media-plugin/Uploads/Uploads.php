@@ -95,7 +95,7 @@ class Uploads
         if (is_array($image) && !empty($image[0])) {
             $use_https = get_option(self::USE_HTTPS_OPTION, false);
             $baseurl = sprintf(
-                '%s://storage.googleapis.com/%s/',
+                '%s://storage.googleapis.com/%s',
                 $use_https ? 'https' : 'http',
                 $bucket);
 
